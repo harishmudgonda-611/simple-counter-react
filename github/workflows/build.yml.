@@ -1,0 +1,43 @@
+name: Build for Repo Runner
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: |
+          if [ -f pnpm-lock.yaml ]; then npm i -g pnpm && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then yarn install --frozen-lockfile
+          elif [ -f package-lock.json ]; then npm ci
+          else npm install; fi
+      - name: Build
+        env:
+          PUBLIC_URL: .
+          CI: "false"
+        run: |
+          if ls vite.config.* >/dev/null 2>&1; then
+            npx vite build --base=./
+          else
+            npm run build
+          fi
+      - name: Publish built files to the built branch
+        run: |
+          OUT=""
+          for d in dist build out; do
+            if [ -f "$d/index.html" ]; then OUT="$d"; break; fi
+          done
+          if [ -z "$OUT" ]; then echo "No build output with index.html found"; exit 1; fi
+          cd "$OUT"
+          git init -b built
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "Built files for Repo Runner"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" built
